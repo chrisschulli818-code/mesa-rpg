@@ -156,7 +156,7 @@
     if (S.selected && !st.tokens.some(t => t.id === S.selected)) S.selected = null;
 
     const key = `${st.map.cols}x${st.map.rows}x${st.map.grid}`;
-    if (key !== S.mapKey) { S.mapKey = key; fitView(); window.MESA3D?.fit(); }
+    if (key !== S.mapKey) { S.mapKey = key; fitView(); window.MESA3D?.fit(); if (S.testStart) setTestStart(null); } // mapa mudou: a posição escolhida não vale mais
 
     renderPlayers();
     renderInit();
@@ -1637,12 +1637,29 @@
   $('#class-close').addEventListener('click', closeClassEditor);
 
   // ---------- teste com jogadores ----------
-  $('#test-add').addEventListener('click', () => socket.emit('test:add', { count: Number($('#test-count').value) }));
+  // Posição inicial escolhida pelo mestre (só vale para o mapa atual)
+  function setTestStart(at) {
+    S.testStart = at;
+    $('#test-start-info').textContent = at
+      ? `Posição inicial: coluna ${at.x + 1}, linha ${at.y + 1}. Os jogadores de teste nascem em volta desse quadrado.`
+      : 'Posição inicial: automática (perto do primeiro jogador ou na entrada do mapa).';
+    $('#test-move').hidden = $('#test-clear').hidden = !at;
+    $('#test-pick').textContent = at ? '📍 Trocar posição' : '📍 Escolher posição inicial';
+    requestDraw();
+  }
+  $('#test-pick').addEventListener('click', () => {
+    if (!S.state?.map) return;
+    setTool('start');
+    toast('Clique no mapa onde os jogadores de teste vão começar.');
+  });
+  $('#test-clear').addEventListener('click', () => setTestStart(null));
+  $('#test-move').addEventListener('click', () => { if (S.testStart) socket.emit('test:move', { at: S.testStart }); });
+  $('#test-add').addEventListener('click', () => socket.emit('test:add', { count: Number($('#test-count').value), at: S.testStart }));
 
   // Demonstração: sem mapa gerado, cria um (masmorra / cidade / casa, conforme o sistema) com névoa e começa.
   $('#demo-toggle').addEventListener('click', () => {
     if (S.state.demo) { socket.emit('test:demo', { start: false }); return; }
-    if (S.state.hasWalls) { socket.emit('test:demo', { start: true }); return; }
+    if (S.state.hasWalls) { socket.emit('test:demo', { start: true, at: S.testStart }); return; }
     const res = GEN.generate({ spec: { ...GEN.interpret('', S.state.system), size: 'm' }, cell: S.state.map.grid, seed: rid(), system: S.state.system });
     socket.emit('map:image', { image: res.canvas.toDataURL('image/jpeg', 0.88), w: res.canvas.width, h: res.canvas.height, walls: res.walls, objects: res.objects });
     socket.emit('map:settings', { fogEnabled: true });
@@ -2619,6 +2636,23 @@
       ctx.strokeStyle = '#ff7a3a'; ctx.lineWidth = 2 / z; ctx.setLineDash([6 / z, 4 / z]);
       ctx.strokeRect(c0 * g, r0 * g, (rad * 2 + 1) * g, (rad * 2 + 1) * g); ctx.setLineDash([]);
     }
+    // Posição inicial dos jogadores de teste (só o mestre vê)
+    if (S.isGM && (S.testStart || (S.tool === 'start' && S.hover))) {
+      const spots = [];
+      if (S.testStart) spots.push([S.testStart.x, S.testStart.y, false]);
+      if (S.tool === 'start' && S.hover) spots.push([Math.floor(S.hover.x / g), Math.floor(S.hover.y / g), true]);
+      for (const [cx, cy, ghost] of spots) {
+        const x = cx * g; const y = cy * g;
+        ctx.save();
+        ctx.globalAlpha = ghost ? 0.55 : 1;
+        ctx.fillStyle = 'rgba(111,255,143,0.18)'; ctx.fillRect(x, y, g, g);
+        ctx.strokeStyle = '#6fff8f'; ctx.lineWidth = 2.5 / z; ctx.setLineDash([6 / z, 4 / z]);
+        ctx.strokeRect(x + 1 / z, y + 1 / z, g - 2 / z, g - 2 / z); ctx.setLineDash([]);
+        ctx.font = `700 ${g * 0.5}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('📍', x + g / 2, y + g / 2);
+        ctx.restore();
+      }
+    }
     // Onde o objeto vai ser colocado
     if (S.tool.startsWith('obj:') && S.hover) {
       ctx.strokeStyle = '#7fd1ff'; ctx.lineWidth = 2 / z; ctx.setLineDash([6 / z, 4 / z]);
@@ -3193,6 +3227,12 @@
   function pointerDownAt(e, w, hitToken, hitObject) {
     if (e.shiftKey) { socket.emit('ping', w); return true; }
     if (S.tool.startsWith('fx:')) { castFx(S.tool.slice(3), w, hitToken); return true; }
+    if (S.tool === 'start' && S.isGM) {
+      const g = S.state.map.grid;
+      setTestStart({ x: clamp(Math.floor(w.x / g), 0, S.state.map.cols - 1), y: clamp(Math.floor(w.y / g), 0, S.state.map.rows - 1) });
+      setTool('move');
+      return true;
+    }
     if (S.tool.startsWith('obj:') && S.isGM) { placeObject(S.tool.slice(4), w); return true; }
     if (S.tool.startsWith('atk:')) {
       const [, id, i] = S.tool.split(':');
@@ -3330,7 +3370,8 @@
     $('#hint').textContent = fx
       ? `Clique no alvo: ${fx.title}${tool === 'fx:shot' ? (S.isGM ? ' (sai do token selecionado)' : '') : ''} · Esc volta para ✋ Mover`
       : objName ? `${objName}: clique no quadrado · Alt+clique num baú/armadilha edita · Esc volta para ✋ Mover`
-        : tool.startsWith('atk:') ? '⚔ Clique no alvo do ataque · Esc cancela'
+        : tool === 'start' ? '📍 Clique no quadrado onde os jogadores de teste vão começar · Esc cancela'
+          : tool.startsWith('atk:') ? '⚔ Clique no alvo do ataque · Esc cancela'
           : tool.startsWith('abl:') ? '✨ Clique no centro da área da habilidade · Esc cancela'
             : DEFAULT_HINT;
   }

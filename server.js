@@ -1314,10 +1314,10 @@ function planTurn(room, actor) {
 }
 
 // ---------- jogadores de teste ----------
-function freeCellsNear(room, anchor, n) {
+function freeCellsNear(room, anchor, n, ignore = new Set()) {
   const { cols, rows } = room.map;
   const grid = blockGrid(room);
-  const taken = new Set(Object.values(room.tokens).map(t => `${Math.round(t.x)},${Math.round(t.y)}`));
+  const taken = new Set(Object.values(room.tokens).filter(t => !ignore.has(t.id)).map(t => `${Math.round(t.x)},${Math.round(t.y)}`));
   const out = [];
   const seen = new Set([`${anchor.x},${anchor.y}`]);
   const q = [anchor];
@@ -1334,11 +1334,36 @@ function freeCellsNear(room, anchor, n) {
   return out;
 }
 
-function addTestPlayers(room, count) {
+// Posição inicial escolhida pelo mestre (quadrado do mapa) ou null
+function cleanStart(room, at) {
+  if (!at || typeof at !== 'object') return null;
+  return { x: int(at.x, 0, room.map.cols - 1), y: int(at.y, 0, room.map.rows - 1) };
+}
+
+// Com névoa, o quadrado inicial e o entorno ficam à vista (senão os jogadores nasceriam no escuro)
+function revealAround(room, at, r = 3) {
+  if (!room.map.fogEnabled) return;
+  for (let y = Math.max(0, at.y - r); y <= Math.min(room.map.rows - 1, at.y + r); y++) {
+    for (let x = Math.max(0, at.x - r); x <= Math.min(room.map.cols - 1, at.x + r); x++) room.revealed.add(`${x},${y}`);
+  }
+  room.map.fogVersion++;
+}
+
+// Leva os jogadores de teste para perto de um quadrado (os mais próximos que estiverem livres)
+function moveBots(room, at) {
+  const bots = Object.values(room.tokens).filter(t => t.owner && room.players[t.owner]?.bot);
+  if (!bots.length) return 0;
+  const cells = freeCellsNear(room, at, bots.length, new Set(bots.map(b => b.id)));
+  bots.forEach((b, i) => { const c = cells[i] || at; b.x = c.x; b.y = c.y; b.rest = { x: c.x, y: c.y }; });
+  revealAround(room, at);
+  return bots.length;
+}
+
+function addTestPlayers(room, count, at = null) {
   const heroes = BEST.TEST_HEROES[room.system] || BEST.TEST_HEROES.dnd5e;
   const bots = Object.values(room.players).filter(p => p.bot).length;
   const firstHero = Object.values(room.tokens).find(t => t.owner);
-  const anchor = firstHero ? { x: Math.round(firstHero.x), y: Math.round(firstHero.y) } : { x: Math.floor(room.map.cols / 2), y: Math.floor(room.map.rows / 2) };
+  const anchor = at || (firstHero ? { x: Math.round(firstHero.x), y: Math.round(firstHero.y) } : { x: Math.floor(room.map.cols / 2), y: Math.floor(room.map.rows / 2) });
   const cells = freeCellsNear(room, anchor, count);
   const names = [];
   for (let i = 0; i < count; i++) {
@@ -1364,7 +1389,8 @@ function addTestPlayers(room, count) {
     room.tokens[t.id] = t;
     names.push(h.name);
   }
-  post(room, { type: 'system', text: `🧪 Jogadores de teste entraram: ${names.join(', ')}.` });
+  if (at) revealAround(room, at);
+  post(room, { type: 'system', text: `🧪 Jogadores de teste entraram${at ? ` em (${at.x}, ${at.y})` : ''}: ${names.join(', ')}.` });
 }
 
 function removeTestPlayers(room) {
@@ -1779,9 +1805,10 @@ function demoTick(room) {
   if (changed) syncAndFight(room);
 }
 
-function startDemo(room, spawn) {
+function startDemo(room, spawn, at = null) {
   stopDemo(room);
-  if (!Object.values(room.players).some(p => p.bot)) addTestPlayers(room, 3);
+  if (!Object.values(room.players).some(p => p.bot)) addTestPlayers(room, 3, at);
+  else if (at) moveBots(room, at); // posição escolhida pelo mestre
   // Mapa recém-gerado: coloca os heróis na entrada.
   if (Array.isArray(spawn) && spawn.length) {
     Object.values(room.tokens).filter(t => t.owner).forEach((t, i) => {
@@ -2452,14 +2479,14 @@ io.on('connection', socket => {
 
   // ----- teste com jogadores -----
   socket.on('test:add', gmOnly(d => {
-    addTestPlayers(room, int(d?.count, 1, 6, 3));
+    addTestPlayers(room, int(d?.count, 1, 6, 3), cleanStart(room, d?.at));
     syncAndFight(room);
   }));
 
   socket.on('test:demo', gmOnly(d => {
     if (!d?.start) { stopDemo(room, '⏹ Demonstração parada pelo mestre.'); return syncAndFight(room, []); }
     if (!room.map.walls) return socket.emit('chat:msg', { id: newId(), ts: Date.now(), type: 'system', text: 'A demonstração precisa de um mapa gerado.' });
-    startDemo(room, d.spawn);
+    startDemo(room, d.spawn, cleanStart(room, d.at));
     syncAndFight(room);
   }));
 
@@ -2492,6 +2519,14 @@ io.on('connection', socket => {
     for (const t of Object.values(room.tokens)) if (!t.owner) delete room.tokens[t.id];
     room.init.list = room.init.list.filter(e => !e.tokenId || room.tokens[e.tokenId]);
     syncAndFight(room, room.combat ? endCombat(room, false) : []);
+  }));
+
+  // Leva os jogadores de teste que já estão no mapa até a posição escolhida
+  socket.on('test:move', gmOnly(d => {
+    const at = cleanStart(room, d?.at);
+    if (!at) return;
+    if (!moveBots(room, at)) return socket.emit('combat:denied', 'Não há jogadores de teste no mapa.');
+    syncAndFight(room);
   }));
 
   socket.on('test:remove', gmOnly(() => {

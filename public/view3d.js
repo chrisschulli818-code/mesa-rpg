@@ -31,6 +31,7 @@ const fxMeshes = new Map();
 const pingMeshes = new Map();
 let particlePoints = null;
 let hoverMesh = null;
+let startMesh = null;
 
 const raycaster = new THREE.Raycaster();
 const ndc = new THREE.Vector2();
@@ -143,6 +144,10 @@ function mount() {
   hoverMesh.rotation.x = -Math.PI / 2;
   hoverMesh.visible = false;
   scene.add(hoverMesh);
+  startMesh = new THREE.Mesh(new THREE.RingGeometry(0.34, 0.48, 4, 1, Math.PI / 4), new THREE.MeshBasicMaterial({ color: '#6fff8f', transparent: true, opacity: 0.9, depthWrite: false, side: THREE.DoubleSide }));
+  startMesh.rotation.x = -Math.PI / 2;
+  startMesh.visible = false;
+  scene.add(startMesh);
 }
 
 function resize() {
@@ -908,7 +913,13 @@ function syncHover() {
   const b = B();
   const tool = b.S.tool;
   const g = b.S.state.map.grid;
-  const show = b.S.hover && (tool.startsWith('obj:') || tool.startsWith('abl:') || b.isBrush());
+  // Marcador fixo da posição inicial dos jogadores de teste (só o mestre)
+  if (startMesh) {
+    const at = b.S.isGM && b.S.testStart;
+    startMesh.visible = !!at;
+    if (at) { startMesh.position.set(at.x + 0.5, 0.06, at.y + 0.5); startMesh.rotation.z += 0.02; }
+  }
+  const show = b.S.hover && (tool === 'start' || tool.startsWith('obj:') || tool.startsWith('abl:') || b.isBrush());
   hoverMesh.visible = !!show;
   if (!show) return;
   let size = 1;
@@ -919,7 +930,7 @@ function syncHover() {
   } else if (b.isBrush()) {
     size = b.S.brush;
     hoverMesh.material.color.set(tool === 'reveal' ? '#ffe9a8' : '#8aa0ff');
-  } else hoverMesh.material.color.set('#7fd1ff');
+  } else hoverMesh.material.color.set(tool === 'start' ? '#6fff8f' : '#7fd1ff');
   const cx = Math.floor(b.S.hover.x / g); const cy = Math.floor(b.S.hover.y / g);
   hoverMesh.scale.set(size, size, 1);
   hoverMesh.position.set(cx + 0.5, 0.05, cy + 0.5);

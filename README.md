@@ -137,6 +137,7 @@ As mesas ficam na coleção `rooms` e as imagens (mapas e retratos) na coleção
   - depois de cada vitória, seguem para o próximo grupo até o fim
   - o botão ⏹ para tudo
 - **🧪 Teste com jogadores** (aba Mestre): adiciona 1 a 4 jogadores de mentira, com ficha, retrato e arma, para testar sozinho. Eles seguem as regras de paredes e armadilhas quando você os move. Dá para ligar "jogadores de teste agem sozinhos" e "monstros agem sozinhos": no turno deles, cada um anda até o alvo, ataca ou usa habilidade, e passa a vez.
+  - **📍 Posição inicial:** clique em *Escolher posição inicial* e depois no quadrado do mapa onde quer que eles comecem. Ao adicionar os jogadores de teste ou iniciar a demonstração, eles nascem em volta desse quadrado (com névoa, o entorno é revelado). *Levar para lá* move os que já estão no mapa; o × volta para a posição automática. A posição vale só para o mapa atual.
 - **Combate automático:** cada monstro tem um alcance de visão (padrão 6 quadrados, ajustável no editor do token; 0 = não detecta). Quando um jogador entra na visão dele sem parede no meio:
   - aparece "⚔ COMBATE!" para todos e um "❗" em cima do monstro
   - o monstro sai do oculto e a iniciativa de todos é rolada
