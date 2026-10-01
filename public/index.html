@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mesa — RPG em tempo real</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Inter:wght@400;500;600;700&family=Orbitron:wght@600;700&family=Special+Elite&display=swap">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body data-system="dnd5e">
+
+<section id="lobby" class="lobby">
+  <div class="lobby-inner">
+    <h1 class="brand">Mesa</h1>
+    <p class="lead">RPG de mesa no navegador. Mestre e jogadores veem o mesmo mapa, os mesmos dados e as mesmas fichas, em tempo real.</p>
+    <div class="lobby-grid">
+      <form id="create-form" class="box">
+        <h2>Criar mesa <span class="muted">(mestre)</span></h2>
+        <div class="systems" id="system-choice"></div>
+        <label>Seu nome<input name="name" required maxlength="40" autocomplete="nickname"></label>
+        <button class="btn primary">Criar mesa</button>
+      </form>
+      <form id="join-form" class="box">
+        <h2>Entrar numa mesa</h2>
+        <label>Código da mesa<input name="code" required maxlength="6" class="code-input" autocomplete="off" placeholder="ABC123"></label>
+        <label>Seu nome<input name="name" required maxlength="40" autocomplete="nickname"></label>
+        <button class="btn primary">Entrar</button>
+        <p class="muted small">Recebeu um link de convite? O código já vem preenchido.</p>
+      </form>
+    </div>
+  </div>
+</section>
+
+<section id="game" class="game" hidden>
+  <header class="topbar">
+    <span class="brand">Mesa</span>
+    <span class="sys-name" id="sys-name"></span>
+    <button class="code-btn" id="invite-btn" title="Copiar link de convite"><b id="room-code"></b><span>Copiar convite</span></button>
+    <span class="combat-badge" id="combat-badge" hidden>⚔ Em combate</span>
+    <span class="demo-badge" id="demo-badge" hidden>▶ Demonstração</span>
+    <div class="players" id="players"></div>
+    <span class="role" id="role-badge"></span>
+  </header>
+
+  <main class="layout">
+    <div class="stage" id="stage">
+      <canvas id="board"></canvas>
+      <div class="combat-banner" id="combat-banner" aria-live="assertive"><strong></strong><span></span></div>
+      <div class="toolbar" id="toolbar">
+        <button data-tool="move" class="on" title="Mover tokens e a visão">✋ Mover</button>
+        <button data-tool="reveal" class="gm-only" title="Pincel: revelar a névoa">☀ Revelar</button>
+        <button data-tool="hide" class="gm-only" title="Pincel: cobrir com névoa">🌑 Esconder</button>
+        <select id="brush" class="gm-only" title="Tamanho do pincel">
+          <option value="1">1×1</option><option value="3" selected>3×3</option><option value="5">5×5</option>
+        </select>
+        <select id="obj-tool" class="gm-only" title="Colocar objetos interativos">
+          <option value="">🧩 Objetos…</option>
+          <option value="door">🚪 Porta</option>
+          <option value="chest">🎁 Baú</option>
+          <option value="trap">⚠ Armadilha</option>
+          <option value="torch">🔥 Tocha</option>
+          <option value="lever">🔧 Alavanca</option>
+          <option value="secret">❔ Passagem secreta</option>
+          <option value="crack">〰 Parede rachada</option>
+          <option value="break">⛏ Quebrar parede</option>
+          <option value="remove">✖ Remover objeto</option>
+        </select>
+        <span class="sep"></span>
+        <span class="fx-group" id="fx-group"></span>
+        <span class="sep"></span>
+        <button id="view3d" title="Alternar entre 2D e 2.5D (só na sua tela)">🧊 2.5D</button>
+        <button id="zoom-out" title="Afastar">−</button>
+        <button id="zoom-in" title="Aproximar">+</button>
+        <button id="zoom-fit" title="Enquadrar o mapa">⌖</button>
+      </div>
+      <div class="hint" id="hint">Shift+clique: ping · Roda: zoom · Arrastar o fundo: mover a visão</div>
+    </div>
+
+    <aside class="panel">
+      <nav class="tabs" id="tabs">
+        <button data-tab="chat" class="on">Chat e dados</button>
+        <button data-tab="sheet">Ficha</button>
+        <button data-tab="init">Iniciativa</button>
+        <button data-tab="story" class="gm-only">História</button>
+        <button data-tab="gm" class="gm-only">Mestre</button>
+      </nav>
+
+      <div class="tab on" id="tab-chat">
+        <div class="chat-log" id="chat-log"></div>
+        <div class="dice-bar" id="dice-bar"></div>
+        <form class="chat-form" id="chat-form">
+          <input id="chat-input" autocomplete="off" maxlength="500" placeholder="Mensagem, /r 2d6+3, /gr 1d20 ou /m (só pro mestre)">
+          <button class="btn primary">Enviar</button>
+        </form>
+        <label class="check secret"><input type="checkbox" id="secret"> <span id="secret-label">Rolagens secretas</span></label>
+      </div>
+
+      <div class="tab" id="tab-sheet"></div>
+
+      <div class="tab" id="tab-init">
+        <div class="init-head">
+          <strong id="init-round">Rodada 1</strong>
+          <div class="row gm-only">
+            <button class="btn ghost" id="init-prev" title="Turno anterior">◀</button>
+            <button class="btn primary" id="init-next">Próximo turno ▶</button>
+          </div>
+        </div>
+        <div class="card player-only my-turn" id="my-turn" hidden>
+          <h3>⚔ Sua vez!</h3>
+          <p class="muted small">Ande com seu token, escolha um ataque e clique no inimigo. Um ataque por turno; depois, encerre o turno.</p>
+          <div class="my-attacks" id="my-attacks"></div>
+          <button class="btn ghost" id="end-turn">Encerrar turno ▶</button>
+        </div>
+        <ol class="init-list" id="init-list"></ol>
+        <div class="card gm-only combat-card">
+          <label class="check"><input type="checkbox" id="auto-combat"> Combate automático: quando um monstro vê um jogador, a luta começa</label>
+          <p class="muted small">O alcance de visão de cada monstro fica no editor do token (aba Mestre). Em mapas gerados, paredes, árvores e prédios bloqueiam a visão.</p>
+          <button class="btn danger" id="combat-end" hidden>Encerrar combate</button>
+        </div>
+        <button class="btn primary player-only" id="init-mine">🎲 Rolar minha iniciativa</button>
+        <form id="init-form" class="card gm-only">
+          <h3>Adicionar à ordem</h3>
+          <div class="grid2">
+            <label>Nome<input name="name" maxlength="40" required></label>
+            <label>Valor<input name="value" type="number" required></label>
+          </div>
+          <label class="check"><input type="checkbox" name="hidden"> Oculto dos jogadores</label>
+          <p class="muted small">Com um token selecionado no mapa, o nome já vem preenchido e o token acende na vez dele.</p>
+          <div class="row">
+            <button class="btn primary">Adicionar</button>
+            <button type="button" class="btn ghost" id="init-clear">Limpar tudo</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="tab" id="tab-story">
+        <section class="card">
+          <h3>📜 História</h3>
+          <p class="muted small">Digite ou cole a aventura. Separe as cenas com "Cena 1", "Capítulo", "#" ou deixe uma linha em branco entre elas. O jogo acha em cada cena o lugar, os inimigos (com a quantidade), o chefe, armadilhas, tesouros e personagens. Só você vê este texto.</p>
+          <textarea id="story-text" rows="9" placeholder="Cena 1: A taverna
+Os heróis chegam à taverna à noite. O dono, Sr. Aldric, pede ajuda...
+
+Cena 2: A floresta sombria
+Na trilha, um bando de lobos ataca. Há uma armadilha no caminho.
+
+Cena 3: O covil
+Numa caverna, o chefe dos goblins guarda o tesouro com quatro goblins e dois orcs."></textarea>
+          <div class="row">
+            <button class="btn primary" id="story-organize">Organizar em cenas</button>
+            <button class="btn ghost" id="story-example">Ver exemplo</button>
+          </div>
+        </section>
+        <section class="card story-opts" id="story-opts" hidden>
+          <div class="grid2">
+            <label>Mapa da cena<select id="story-place"><option value="replace">Substituir o mapa</option><option value="e">Continuar → à direita</option><option value="s">Continuar ↓ embaixo</option><option value="w">Continuar ← à esquerda</option><option value="n">Continuar ↑ em cima</option></select></label>
+            <label>Tamanho<select id="story-size"><option value="s">Pequeno</option><option value="m" selected>Médio</option><option value="l">Grande</option></select></label>
+          </div>
+          <label class="check"><input type="checkbox" id="story-narrate" checked> Ao montar, ler o texto da cena para os jogadores</label>
+          <label class="check"><input type="checkbox" id="story-auto" checked> Monstros agem sozinhos no turno deles</label>
+        </section>
+        <div id="story-scenes" class="story-scenes"></div>
+      </div>
+
+      <div class="tab" id="tab-gm">
+        <section class="card">
+          <h3>🧪 Teste com jogadores</h3>
+          <button class="btn primary demo-btn" id="demo-toggle">▶ Iniciar demonstração</button>
+          <p class="muted small">Tudo se move sozinho, como num jogo: os heróis de teste exploram o mapa, abrem portas e baús, caem em armadilhas e enfrentam os inimigos. Se não houver mapa gerado, um é criado na hora.</p>
+          <p class="muted small">Adiciona jogadores de mentira, com ficha, retrato e arma, para você testar combate, armadilhas e portas sozinho. Você move os tokens deles e rola pela ficha deles (aba Ficha).</p>
+          <div class="row">
+            <select id="test-count" title="Quantos"><option>1</option><option>2</option><option selected>3</option><option>4</option></select>
+            <button class="btn primary" id="test-add">Adicionar jogadores de teste</button>
+            <button class="btn ghost" id="test-remove">Remover</button>
+          </div>
+          <label class="check"><input type="checkbox" id="bots-auto"> Jogadores de teste agem sozinhos no turno deles</label>
+          <label class="check"><input type="checkbox" id="monsters-auto"> Monstros agem sozinhos no turno deles</label>
+        </section>
+
+        <section class="card" id="encounter-card">
+          <h3>⚔ Encontro automático</h3>
+          <p class="muted small">Diga quantos e quais inimigos; o jogo escolhe onde cada um fica: em grupos nas salas, espalhados pelo caminho, longe e fora da vista dos jogadores, guardando os baús, com quem luta corpo a corpo na frente e quem atira atrás.</p>
+          <div class="grid3">
+            <label>Inimigos<input type="number" id="enc-count" min="1" max="40" value="6"></label>
+            <label>Grupos<select id="enc-groups"><option value="0">Automático</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option></select></label>
+            <label title="Inimigo mais forte, no ponto mais distante do mapa">Chefe<select id="enc-boss"><option value="1">Sim</option><option value="0" selected>Não</option></select></label>
+          </div>
+          <div class="enc-types" id="enc-types"></div>
+          <div class="grid2">
+            <label>Armadilhas extras<input type="number" id="enc-traps" min="0" max="20" value="0"></label>
+            <label>Baús extras<input type="number" id="enc-chests" min="0" max="20" value="0"></label>
+          </div>
+          <label class="check"><input type="checkbox" id="enc-hidden" checked> Ocultos dos jogadores até serem vistos</label>
+          <label class="check"><input type="checkbox" id="enc-replace"> Tirar os inimigos que já estão no mapa</label>
+          <label class="check"><input type="checkbox" id="enc-auto"> Monstros agem sozinhos no turno deles</label>
+          <div class="row">
+            <button class="btn primary" id="enc-go">⚔ Posicionar inimigos</button>
+            <button class="btn ghost" id="enc-clear">Remover todos os inimigos</button>
+          </div>
+        </section>
+
+        <section class="card" id="class-card">
+          <h3>📚 <span class="class-word">Classes</span> e habilidades</h3>
+          <p class="muted small">Cadastre as <span class="class-word">classes</span> da sua mesa, com PV, atributos, perícias, ataques e habilidades. Depois dê uma para cada jogador na aba Ficha (ou deixe que eles escolham).</p>
+          <div id="class-list" class="class-list"></div>
+          <div class="row">
+            <button class="btn primary" id="class-new">+ Nova</button>
+            <button class="btn ghost" id="class-presets">Carregar prontas</button>
+            <button class="btn ghost" id="rest-btn" title="Todos recuperam os usos das habilidades">🛏 Descanso</button>
+          </div>
+          <label class="check"><input type="checkbox" id="players-pick"> Jogadores podem escolher a própria <span class="class-word">classe</span> (fora de combate)</label>
+          <label class="check"><input type="checkbox" id="lock-sheets"> Travar fichas: só o mestre muda atributos, perícias, ataques e PV máximos</label>
+        </section>
+
+        <section class="card">
+          <h3>Gerador de mapas</h3>
+          <form id="gen-form" class="gen-form">
+            <input id="gen-text" maxlength="160" autocomplete="off" placeholder="Descreva o mapa: cripta amaldiçoada à noite…">
+            <button class="btn primary">Gerar</button>
+          </form>
+          <div class="gen-examples" id="gen-examples"></div>
+          <p class="gen-understood" id="gen-understood"></p>
+          <canvas id="gen-preview" class="gen-preview" aria-label="Pré-visualização do mapa gerado"></canvas>
+          <details class="gen-adjust">
+            <summary>Ajustar tipo e tamanho</summary>
+            <div class="grid2">
+              <label>Tipo<select id="gen-type"></select></label>
+              <label>Tamanho<select id="gen-size"><option value="s">Pequeno (20×14)</option><option value="m" selected>Médio (30×20)</option><option value="l">Grande (40×28)</option></select></label>
+            </div>
+          </details>
+          <label>Onde colocar
+            <select id="gen-place">
+              <option value="replace">Substituir o mapa atual</option>
+              <option value="e">Continuar o mapa → à direita</option>
+              <option value="w">Continuar o mapa ← à esquerda</option>
+              <option value="n">Continuar o mapa ↑ em cima</option>
+              <option value="s">Continuar o mapa ↓ embaixo</option>
+            </select>
+          </label>
+          <div class="row">
+            <button class="btn ghost" id="gen-roll">🎲 Gerar outro</button>
+            <button class="btn primary" id="gen-use">Usar este mapa</button>
+          </div>
+          <label class="check" id="gen-explore-row"><input type="checkbox" id="gen-explore" checked> Modo exploração: névoa em tudo, entrada revelada e jogadores na entrada</label>
+          <p class="muted small" id="gen-join-hint" hidden>A área nova entra ao lado da atual, ligada por uma passagem com porta. Tokens, objetos e a névoa já revelada continuam como estão; a área nova fica coberta pela névoa até alguém chegar lá.</p>
+        </section>
+
+        <section class="card">
+          <h3>Mapa</h3>
+          <div class="row">
+            <label class="btn primary file">Enviar imagem do mapa<input type="file" id="map-file" accept="image/*" hidden></label>
+            <button class="btn ghost" id="map-clear">Remover imagem</button>
+          </div>
+          <div class="grid3">
+            <label>Quadrado (px)<input type="number" id="map-grid" min="20" max="200"></label>
+            <label>Colunas<input type="number" id="map-cols" min="4" max="200"></label>
+            <label>Linhas<input type="number" id="map-rows" min="4" max="200"></label>
+          </div>
+          <label class="check"><input type="checkbox" id="fog-on"> Névoa de guerra</label>
+          <label class="check"><input type="checkbox" id="collision-on"> Paredes e portas fechadas bloqueiam os jogadores (mapas gerados)</label>
+          <div class="row">
+            <button class="btn ghost" id="fog-reveal-all">Revelar tudo</button>
+            <button class="btn ghost" id="fog-hide-all">Cobrir tudo</button>
+          </div>
+          <p class="muted small">Pinte com ☀ Revelar e 🌑 Esconder na barra do mapa. Os jogadores recebem só a parte revelada da imagem.</p>
+        </section>
+
+        <section class="card">
+          <h3>Novo token</h3>
+          <form id="token-form" class="grid2">
+            <div class="span2 portrait-row">
+              <button type="button" class="portrait big" id="token-form-img" title="Escolher imagem"></button>
+              <div class="muted small">Clique no retrato para escolher na galeria ou enviar uma imagem sua.</div>
+            </div>
+            <label>Nome<input name="name" maxlength="40"></label>
+            <label>PV<input name="maxHp" type="number" min="0" max="9999" value="7"></label>
+            <label>Cor<input name="color" type="color" value="#b33a3a"></label>
+            <label>Tamanho<select name="size"><option value="1">1×1</option><option value="2">2×2 (grande)</option><option value="3">3×3 (enorme)</option></select></label>
+            <label>Visão (quadrados)<input name="vision" type="number" min="0" max="40" value="6" title="0 = não detecta ninguém"></label>
+            <label class="check span2"><input type="checkbox" name="hidden"> Oculto dos jogadores</label>
+            <button class="btn primary span2">Colocar no mapa</button>
+          </form>
+        </section>
+
+        <section class="card" id="token-editor"></section>
+
+        <section class="card">
+          <h3>Anotações do mestre</h3>
+          <textarea id="gm-notes" rows="8" placeholder="Só você vê isto. Salva sozinho."></textarea>
+        </section>
+
+        <section class="card">
+          <h3>Convidar jogadores</h3>
+          <p class="small" id="invite-info"></p>
+        </section>
+      </div>
+    </aside>
+  </main>
+</section>
+
+<div class="modal" id="picker" hidden>
+  <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="picker-title">
+    <div class="modal-head">
+      <h3 id="picker-title">Escolher retrato</h3>
+      <button class="mini" id="picker-close" title="Fechar">✕</button>
+    </div>
+    <div class="row picker-tools">
+      <div class="seg" id="picker-filter"></div>
+      <label class="btn primary small file">⬆ Enviar imagem<input type="file" id="picker-file" accept="image/*" hidden></label>
+      <button class="btn ghost small" id="picker-none">Sem imagem</button>
+    </div>
+    <div class="picker-grid" id="picker-grid"></div>
+  </div>
+</div>
+
+<div class="modal" id="class-modal" hidden>
+  <div class="modal-box wide" role="dialog" aria-modal="true" aria-labelledby="class-modal-title">
+    <div class="modal-head">
+      <h3 id="class-modal-title">Editar classe</h3>
+      <button class="mini" id="class-close" title="Fechar">✕</button>
+    </div>
+    <div class="class-editor" id="class-editor"></div>
+    <div class="row modal-foot">
+      <button class="btn ghost" id="class-cancel">Cancelar</button>
+      <button class="btn primary" id="class-save">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="systems.js"></script>
+<script src="art.js"></script>
+<script src="bestiary.js"></script>
+<script src="classes.js"></script>
+<script src="story.js"></script>
+<script src="mapgen.js"></script>
+<script src="app.js"></script>
+<script type="importmap">{ "imports": { "three": "/vendor/three/build/three.module.js", "three/addons/": "/vendor/three/examples/jsm/" } }</script>
+<script type="module" src="view3d.js"></script>
+</body>
+</html>

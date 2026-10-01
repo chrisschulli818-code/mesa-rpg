@@ -1,0 +1,19 @@
+# Render Blueprint: New → Blueprint → escolha este repositório.
+# As mesas ficam salvas no Supabase (o disco do Render grátis é apagado a cada reinício).
+services:
+  - type: web
+    name: mesa-rpg
+    runtime: node
+    plan: free
+    region: virginia
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      # Cole os valores no painel do Render (nunca no repositório)
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false
