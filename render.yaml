@@ -1,5 +1,5 @@
 # Render Blueprint: New → Blueprint → escolha este repositório.
-# As mesas ficam salvas no Supabase (o disco do Render grátis é apagado a cada reinício).
+# As mesas ficam salvas no MongoDB Atlas (o disco do Render grátis é apagado a cada reinício).
 services:
   - type: web
     name: mesa-rpg
@@ -12,8 +12,8 @@ services:
     envVars:
       - key: NODE_VERSION
         value: "24"
-      # Cole os valores no painel do Render (nunca no repositório)
-      - key: SUPABASE_URL
+      # Cole o valor no painel do Render (nunca no repositório): mongodb+srv://usuario:senha@cluster.../
+      - key: MONGODB_URI
         sync: false
-      - key: SUPABASE_SECRET_KEY
-        sync: false
+      - key: MONGODB_DB
+        value: mesa

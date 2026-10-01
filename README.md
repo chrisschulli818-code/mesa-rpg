@@ -16,17 +16,19 @@ Depois abra http://localhost:3000, crie a mesa e clique em **Copiar convite**.
 
 ## Hospedar no Render (link fixo para os amigos)
 
-O projeto já vem pronto para o Render (plano grátis), com as mesas salvas no Supabase. O disco do Render grátis é apagado a cada reinício; sem o Supabase, as mesas sumiriam.
+O projeto já vem pronto para o Render (plano grátis), com as mesas salvas no **MongoDB Atlas** (grátis para sempre, sem cartão). O disco do Render grátis é apagado a cada reinício; sem o banco, as mesas sumiriam.
 
-1. **Render:** em https://dashboard.render.com clique em **New → Blueprint**, autorize o GitHub e escolha o repositório `mesa-rpg`. O arquivo `render.yaml` configura tudo.
-2. **Variáveis** (o Render pede na criação; depois ficam em *Environment*):
-   - `SUPABASE_URL`: `https://lhghfuvkjueorksmnxyt.supabase.co`
-   - `SUPABASE_SECRET_KEY`: no Supabase, **Project Settings → API Keys → Secret keys** (a que começa com `sb_secret_`). Cole só no Render, nunca no código nem no chat.
-3. Espere o deploy terminar e abra `https://mesa-rpg-xxxx.onrender.com` (o endereço aparece no topo do painel). Crie a mesa por esse link e mande o convite.
-4. **Para o servidor não dormir** (o grátis desliga após 15 min sem acesso): crie uma conta grátis em https://cron-job.org, clique em **Create cronjob**, use a URL `https://SEU-APP.onrender.com/health` e escolha **a cada 10 minutos**. Uma só mesa ligada 24 h cabe nas 750 h grátis por mês do Render.
+1. **MongoDB Atlas** (https://www.mongodb.com/cloud/atlas/register):
+   - crie a conta e um cluster **M0 (Free)**, de preferência na região **N. Virginia (AWS us-east-1)**;
+   - em **Database Access**, crie um usuário e uma senha (use letras e números, sem símbolos, para não dar problema na URL);
+   - em **Network Access → Add IP Address**, escolha **Allow access from anywhere** (`0.0.0.0/0`), porque o IP do Render muda;
+   - em **Database → Connect → Drivers**, copie a URL `mongodb+srv://usuario:senha@cluster....mongodb.net/` e troque `<password>` pela senha.
+2. **Render:** em https://dashboard.render.com clique em **New → Blueprint**, autorize o GitHub e escolha o repositório `mesa-rpg` (ou crie um **Web Service** com build `npm install` e start `node server.js`).
+3. **Variável de ambiente** `MONGODB_URI`: cole a URL do passo 1 (só no Render, nunca no código nem no chat). `MONGODB_DB` já vem como `mesa`.
+4. Espere o deploy e confira nos *Logs* a linha **"mesa(s) carregada(s) de MongoDB"**. Abra `https://mesa-rpg-xxxx.onrender.com`, crie a mesa e mande o convite.
+5. **Para o servidor não dormir** (o grátis desliga após 15 min sem acesso): crie uma conta grátis em https://cron-job.org, **Create cronjob**, URL `https://SEU-APP.onrender.com/health`, **a cada 10 minutos**. Uma só mesa ligada 24 h cabe nas 750 h grátis por mês do Render.
 
-As mesas ficam na tabela `mesa_rooms` e as imagens (mapas e retratos) na pasta privada `mesa` do Supabase. Jogando no próprio PC, sem essas variáveis, tudo continua salvo em `data/rooms.json`.
-
+As mesas ficam na coleção `rooms` e as imagens (mapas e retratos) na coleção `blobs`. Jogando no próprio PC, sem `MONGODB_URI`, tudo continua salvo em `data/rooms.json`. Se preferir o Supabase, use `SUPABASE_URL` e `SUPABASE_SECRET_KEY` no lugar (tabela `mesa_rooms` e pasta `mesa`).
 ## Jogar com amigos
 
 - **Mesma rede (Wi-Fi):** o convite já usa o IP da sua máquina (ex.: `http://192.168.0.10:3000`). Se não abrir, libere o Node no Firewall do Windows.
@@ -144,6 +146,6 @@ As mesas ficam na tabela `mesa_rooms` e as imagens (mapas e retratos) na pasta p
 
   O mestre pode desligar o recurso ou encerrar a luta na aba Iniciativa. Nos mapas gerados, paredes, árvores, casas e prédios bloqueiam a visão; em imagens enviadas vale só a distância.
 - O jogador nunca recebe tokens ocultos, PV de monstros, fichas dos outros nem as anotações do mestre
-- As mesas ficam salvas em `data/rooms.json` (ou no Supabase, quando hospedado; veja "Hospedar no Render")
+- As mesas ficam salvas em `data/rooms.json` (ou no MongoDB, quando hospedado; veja "Hospedar no Render")
 
 O mestre é reconhecido por uma chave guardada no navegador em que a mesa foi criada. Para mestrar de outro PC, crie a mesa nele.
